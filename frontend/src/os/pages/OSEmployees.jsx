@@ -34,6 +34,12 @@ export default function OSEmployees() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Live refresh every 12s so online/offline status updates without reload.
+  useEffect(() => {
+    const int = setInterval(load, 12000);
+    return () => clearInterval(int);
+  }, [load]);
+
   const create = async (e) => {
     e.preventDefault();
     setBusy(true);

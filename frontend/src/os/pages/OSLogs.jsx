@@ -8,7 +8,10 @@ export default function OSLogs() {
   const [rows, setRows] = useState([]);
 
   useEffect(() => {
-    osApi.get("/activity-logs").then((r) => setRows(r.data)).catch(() => setRows([]));
+    const load = () => osApi.get("/activity-logs").then((r) => setRows(r.data)).catch(() => setRows([]));
+    load();
+    const int = setInterval(load, 8000); // live activity feed
+    return () => clearInterval(int);
   }, []);
 
   return (

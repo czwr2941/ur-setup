@@ -41,5 +41,22 @@ CEO can open Employees → click "الصلاحيات" (Permissions) → check an
 - `GET  /api/os/employees/lookup` — light employee list for task assignment
 - `POST /api/os/auth/google/session` — Google OAuth exchange
 
-## Live-Refresh
-Client polls `/api/os/me` every 10s so any permission/role change is reflected within 10s in the sidebar without reload.
+## Live-Refresh (no reload needed)
+- Dashboard summary / tasks / activity / online-employees: refreshes every **10 seconds**
+- Employees list (online/offline status): every **12 seconds**
+- Activity Logs: every **8 seconds**
+- User permissions (sidebar): every **10 seconds**
+
+## Integrations Slot (ready — waiting for API keys)
+CEO can open Settings → scroll to "التكاملات" and click "ربط" on any of:
+- **Salla** — access_token, store_id, webhook_secret
+- **WhatsApp Business** — phone_id, access_token
+- **Email** — provider, api_key, from_email
+
+Once saved, the integration flips to "connected" and the token is stored (masked in list responses). Actual Salla API calls will be wired next when the user provides real credentials.
+
+Backend endpoints:
+- `GET  /api/os/integrations` — list all (creds masked)
+- `PUT  /api/os/integrations/{key}` — upsert (requires `integrations.manage`)
+- `DELETE /api/os/integrations/{key}` — disconnect
+

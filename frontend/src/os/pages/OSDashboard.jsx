@@ -65,6 +65,13 @@ export default function OSDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-refresh every 10s so orders/customers/activity feel LIVE.
+  // When Salla is connected later, this same polling picks up new orders automatically.
+  useEffect(() => {
+    const int = setInterval(load, 10000);
+    return () => clearInterval(int);
+  }, [load]);
+
   const addTask = async (e) => {
     e.preventDefault();
     if (!taskTitle.trim()) return;

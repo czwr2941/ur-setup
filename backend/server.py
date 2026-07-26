@@ -817,6 +817,12 @@ class OSRoleUpsert(BaseModel):
     description: Optional[str] = ""
 
 
+class OSIntegrationUpsert(BaseModel):
+    key: Literal["salla", "whatsapp", "email"]
+    enabled: bool = True
+    credentials: dict = Field(default_factory=dict)  # e.g. {"access_token": "...", "store_id": "..."}
+
+
 # ------ Auth (OS extensions) ------
 @os_router.get("/me")
 async def os_me(user: dict = Depends(get_current_user)):
@@ -1193,3 +1199,67 @@ async def _seed_os():
 
 
 app.include_router(os_router)
+
+
+# =============================================================================
+# UR SETUP OS — Integrations
+# =============================================================================
+integrations_router = APIRouter(prefix="/api/os/integrations", tags=["integrations"])
+
+
+def _mask_creds(creds: dict) -> dict:
+    """Return credentials with sensitive values masked (only last 4 chars visible)."""
+    out = {}
+    for k, v in (creds or {}).items():
+        if isinstance(v, str) and len(v) > 4 and any(s in k.lower() for s in ("token", "secret", "key", "password")):
+            out[k] = "•" * 8 + v[-4:]
+        else:
+            out[k] = v
+    return out
+
+
+@integrations_router.get("")
+async def list_integrations(_: dict = Depends(get_current_user)):
+    cursor = db.integrations.find({})
+    known = {"salla", "whatsapp", "email"}
+    saved = {}
+    async for doc in cursor:
+        doc.pop("_id", None)
+        doc["credentials"] = _mask_creds(doc.get("credentials", {}))
+        saved[doc["key"]] = doc
+    # Ensure all known integrations appear
+    for k in known:
+        if k not in saved:
+            saved[k] = {"key": k, "enabled": False, "credentials": {}, "status": "not_connected"}
+    return list(saved.values())
+
+
+@integrations_router.put("/{key}")
+async def upsert_integration(key: str, payload: OSIntegrationUpsert,
+                             actor: dict = Depends(require_perm("integrations.manage"))):
+    if key != payload.key:
+        raise HTTPException(status_code=400, detail="Key mismatch")
+    now = _now_iso()
+    await db.integrations.update_one(
+        {"key": key},
+        {"$set": {"key": key, "enabled": payload.enabled,
+                  "credentials": payload.credentials,
+                  "status": "connected" if payload.enabled and payload.credentials else "not_connected",
+                  "updated_at": now},
+         "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+    await log_activity(actor, "integration_upserted", "integrations", target=key,
+                       meta={"enabled": payload.enabled})
+    return {"ok": True}
+
+
+@integrations_router.delete("/{key}")
+async def delete_integration(key: str,
+                             actor: dict = Depends(require_perm("integrations.manage"))):
+    await db.integrations.delete_one({"key": key})
+    await log_activity(actor, "integration_deleted", "integrations", target=key)
+    return {"ok": True}
+
+
+app.include_router(integrations_router)

@@ -89,6 +89,10 @@ html { scroll-behavior: smooth; }
 /* Fine tuning for RTL logical alignment on lucide icons that should mirror */
 html[dir="rtl"] .rtl-flip { transform: scaleX(-1); }
 
+/* Force checkboxes to monochrome (no default blue) */
+input[type="checkbox"] { accent-color: #FAFAFA; }
+html.light input[type="checkbox"] { accent-color: #0A0A0B; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

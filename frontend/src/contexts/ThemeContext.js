@@ -13,8 +13,13 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
+    if (theme === "dark") {
+      root.classList.add("dark");
+      root.classList.remove("light");
+    } else {
+      root.classList.remove("dark");
+      root.classList.add("light");
+    }
     try { localStorage.setItem("os_theme", theme); } catch (e) { /* ignore */ }
   }, [theme]);
 
