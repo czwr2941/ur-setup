@@ -566,7 +566,7 @@ async def admin_list_newsletter(_: dict = Depends(require_role("super_admin", "a
 # ----- Users (super_admin only) -----
 @admin_router.get("/users", response_model=List[UserPublic])
 async def admin_list_users(_: dict = Depends(require_role("super_admin"))):
-    cursor = db.users.find({}).sort("created_at", -1)
+    cursor = db.users.find({}).sort("created_at", -1).limit(500)
     out = []
     async for doc in cursor:
         doc.pop("_id", None)
@@ -915,7 +915,7 @@ async def os_google_session(request: Request, response: Response):
 # ------ Employees ------
 @os_router.get("/employees")
 async def os_list_employees(_: dict = Depends(require_perm("employees.view"))):
-    cursor = db.users.find({}).sort("created_at", -1)
+    cursor = db.users.find({}).sort("created_at", -1).limit(500)
     out = []
     async for doc in cursor:
         doc.pop("_id", None); doc.pop("password_hash", None)
@@ -995,7 +995,7 @@ async def os_delete_employee(uid: str,
 # ------ Roles ------
 @os_router.get("/roles")
 async def os_list_roles(_: dict = Depends(get_current_user)):
-    cursor = db.roles.find({}).sort("name", 1)
+    cursor = db.roles.find({}).sort("name", 1).limit(100)
     out = []
     async for doc in cursor:
         doc.pop("_id", None)
@@ -1142,7 +1142,7 @@ async def os_dashboard_summary(user: dict = Depends(require_perm("dashboard.view
 @os_router.get("/dashboard/online-employees")
 async def os_online_employees(_: dict = Depends(require_perm("logs.view"))):
     """Only managers (logs.view = CEO) can see who's online."""
-    cursor = db.users.find({"status": "online"}).sort("last_seen", -1)
+    cursor = db.users.find({"status": "online"}).sort("last_seen", -1).limit(200)
     out = []
     async for doc in cursor:
         doc.pop("_id", None); doc.pop("password_hash", None)
@@ -1220,7 +1220,7 @@ def _mask_creds(creds: dict) -> dict:
 
 @integrations_router.get("")
 async def list_integrations(_: dict = Depends(get_current_user)):
-    cursor = db.integrations.find({})
+    cursor = db.integrations.find({}).limit(50)
     known = {"salla", "whatsapp", "email"}
     saved = {}
     async for doc in cursor:
