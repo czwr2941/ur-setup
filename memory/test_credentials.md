@@ -3,30 +3,43 @@
 ## CEO (Seed Admin — Full Access)
 - Email: `ceo@ursetup.com`
 - Password: `URSetupOS@2026#Prime`
-- Role: **CEO** (all permissions)
-- Login: `/os/login` — email/password OR "Continue with Google"
+- Role: **CEO** (all 19 permissions)
+- Login URL: `/os/login`
 
-## Test Employee (Operations)
-- Email: `ops@ursetup.com`
-- Password: `Ops12345`
-- Role: **Operations** (dashboard, orders, customers, products)
-- Cannot access: activity logs, employees management, settings.manage
+## Login Methods
+1. **Email/Password (JWT)** — POST `/api/auth/login`
+2. **Google OAuth (Emergent-managed)** — via the "Continue with Google" button
+   - New Google users are auto-provisioned as **Pending** role with ZERO permissions
+   - They are redirected to `/os/pending` (waiting-for-approval screen)
+   - CEO must go to `/os/employees` and change their role to grant access
 
-## Available Login Methods
-1. **Email/Password JWT** — POST `/api/auth/login`
-2. **Google OAuth (Emergent-managed)** — Redirects to Emergent auth then back to `/os#session_id=...` → handled by `OSAuthCallback` → POST `/api/os/auth/google/session`
-   - New Google users are auto-provisioned as **Support** role with empty permissions (CEO must approve/upgrade)
+## Role → Default Permissions
+| Role | Permissions |
+|---|---|
+| CEO | ALL (19) |
+| Marketing | dashboard, marketing.*, customers.view, analytics.view |
+| Operations | dashboard, orders.*, customers.*, products.view |
+| Tech & Sales | dashboard, analytics, products.*, integrations, settings.view |
+| Support | dashboard, support.*, customers.view |
+| Pending | (none — awaiting approval) |
 
-## Key Endpoints
-- `GET  /api/os/me` — current user + permissions_effective
+## Per-User Permission Overrides
+CEO can open Employees → click "الصلاحيات" (Permissions) → check any combination of the 19 permissions and save. When custom permissions are set, `permissions_customized: true` is stored so the user gets exactly what CEO picks (not the role defaults). Clicking "reset to role default" clears the customization and the user picks up their role's defaults again.
+
+## Key OS Endpoints
+- `GET  /api/os/me` — current user + `permissions_effective`
 - `PATCH /api/os/preferences` — save language / theme
 - `GET  /api/os/employees` — list (requires `employees.view`)
 - `POST /api/os/employees` — create (requires `employees.manage`)
-- `GET  /api/os/activity-logs` — CEO only (requires `logs.view`)
+- `PATCH /api/os/employees/{uid}` — update role/permissions/name (auto-resets perms on role change)
+- `DELETE /api/os/employees/{uid}` — delete
+- `GET  /api/os/permissions-catalog` — full catalog + role defaults
+- `GET  /api/os/roles` + `PUT /api/os/roles/{name}` — edit role permissions
+- `GET  /api/os/activity-logs` — CEO only
 - `GET  /api/os/dashboard/summary` — dashboard data
-- `GET  /api/os/dashboard/online-employees` — CEO only
-- `POST /api/os/tasks`, `PATCH /api/os/tasks/{id}`, `DELETE /api/os/tasks/{id}`
+- `POST /api/os/tasks` — create task (requires `tasks.assign` to assign to others)
+- `GET  /api/os/employees/lookup` — light employee list for task assignment
+- `POST /api/os/auth/google/session` — Google OAuth exchange
 
-## Storefront Legacy Admin (still functional)
-- URL: `/admin/login`
-- Same CEO credentials — CEO role is granted full legacy `super_admin` access via permission catalog.
+## Live-Refresh
+Client polls `/api/os/me` every 10s so any permission/role change is reflected within 10s in the sidebar without reload.

@@ -1,14 +1,15 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingBag, Users, Package, Megaphone, LifeBuoy,
   UserCog, BarChart3, ScrollText, Settings, LogOut, Sun, Moon, Globe,
-  Bell, Menu, X, ShieldCheck, ExternalLink,
+  Bell, Menu, ShieldCheck, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useLang } from "../contexts/LangContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { OS_T } from "./i18n";
+import { tokens } from "./theme";
 import { osApi } from "./api";
 
 const NAV = [
@@ -29,31 +30,50 @@ export default function OSLayout() {
   const { lang, set: setLang } = useLang();
   const { theme, toggle: toggleTheme } = useTheme();
   const t = OS_T[lang];
+  const k = tokens(theme);
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const outletContext = useMemo(() => ({ user, t, lang, theme }), [user, t, lang, theme]);
 
-  // Apply user's saved preferences and enrich with OS permissions once
+  const perms = user?.permissions_effective || [];
+
+  // Fetch full user (with permissions_effective) and refresh in real-time
+  const refreshMe = useCallback(async () => {
+    try {
+      const r = await osApi.get("/me");
+      setUser((prev) => ({ ...prev, ...r.data }));
+    } catch (e) { /* ignore */ }
+  }, [setUser]);
+
+  const outletContext = useMemo(() => ({ user, t, lang, theme, k, perms, refreshMe }),
+    [user, t, lang, theme, k, perms, refreshMe]);
+
   useEffect(() => {
     if (user?.language && user.language !== lang) setLang(user.language);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.language]);
 
   useEffect(() => {
-    // If user has no permissions loaded (legacy /auth/me), fetch OS /me
-    if (user && !user.permissions_effective) {
-      osApi.get("/me").then((r) => setUser({ ...user, ...r.data })).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+    if (user && !user.permissions_effective) refreshMe();
+  }, [user, refreshMe]);
+
+  // Poll /me every 10s so permission/role changes reflect instantly (max 10s delay)
+  useEffect(() => {
+    if (!user) return;
+    const int = setInterval(refreshMe, 10000);
+    return () => clearInterval(int);
+  }, [user, refreshMe]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">…</div>;
+  if (loading) return <div className={`min-h-screen ${k.shellBg} ${k.shellText} flex items-center justify-center`}>…</div>;
   if (!user) return <Navigate to="/os/login" replace />;
 
-  const perms = user.permissions_effective || user.permissions || [];
+  // Auto-redirect pending users (zero permissions) to /os/pending
+  if (user.permissions_effective && user.permissions_effective.length === 0 && location.pathname !== "/os/pending") {
+    return <Navigate to="/os/pending" replace />;
+  }
+
   const items = NAV.filter((n) => perms.includes(n.perm));
 
   const persistPref = async (patch) => {
@@ -73,22 +93,15 @@ export default function OSLayout() {
     persistPref({ theme: theme === "dark" ? "light" : "dark" });
   };
 
-  const isDark = theme === "dark";
-  const shellBg = isDark ? "bg-[#0B0F19]" : "bg-[#F8FAFC]";
-  const shellText = isDark ? "text-slate-100" : "text-slate-900";
-  const sideBg = isDark ? "bg-[#0d1220]" : "bg-white";
-  const sideBorder = isDark ? "border-white/8" : "border-slate-200";
-  const barBg = isDark ? "bg-[#0B0F19]/85 border-white/8" : "bg-white/90 border-slate-200";
-
   const Sidebar = (
-    <div className={`w-64 shrink-0 border-e ${sideBorder} ${sideBg} flex flex-col`}>
-      <div className={`px-6 py-5 border-b ${sideBorder} flex items-center gap-3`}>
-        <div className={`w-9 h-9 rounded-lg ${isDark ? "bg-blue-500/15" : "bg-blue-50"} flex items-center justify-center`}>
-          <ShieldCheck className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
+    <div className={`w-64 shrink-0 border-e ${k.sideBorder} ${k.sideBg} flex flex-col`}>
+      <div className={`px-6 py-5 border-b ${k.sideBorder} flex items-center gap-3`}>
+        <div className={`w-9 h-9 rounded-lg ${k.logoBg} flex items-center justify-center`}>
+          <ShieldCheck className="w-5 h-5" />
         </div>
         <div>
           <p className="font-semibold tracking-tight">UR SETUP OS</p>
-          <p className={`text-[10px] font-mono tracking-[0.22em] uppercase ${isDark ? "text-slate-500" : "text-slate-500"}`}>{t.tagline}</p>
+          <p className={`text-[10px] font-mono tracking-[0.22em] uppercase ${k.muted}`}>{t.tagline}</p>
         </div>
       </div>
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
@@ -97,9 +110,7 @@ export default function OSLayout() {
             data-testid={`os-nav-${it.key}`}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 text-sm rounded-md transition-colors duration-200 ${
-                isActive
-                  ? isDark ? "bg-blue-500/12 text-white border-s-2 border-blue-500" : "bg-blue-50 text-blue-700 border-s-2 border-blue-600"
-                  : isDark ? "text-slate-400 hover:text-white hover:bg-white/5" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                isActive ? `${k.accentSoft} border-s-2 ${k.dark ? "border-white" : "border-black"}` : `${k.muted} ${k.hover}`
               }`
             }>
             <it.Icon className="w-4 h-4" />
@@ -107,23 +118,23 @@ export default function OSLayout() {
           </NavLink>
         ))}
         <a href="/" target="_blank" rel="noreferrer"
-          className={`flex items-center gap-3 px-3 py-2.5 text-sm rounded-md ${isDark ? "text-slate-500 hover:text-white hover:bg-white/5" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"} transition-colors duration-200`}>
+          className={`flex items-center gap-3 px-3 py-2.5 text-sm rounded-md ${k.muted} ${k.hover} transition-colors duration-200`}>
           <ExternalLink className="w-4 h-4" /><span>{t.nav.store}</span>
         </a>
       </nav>
-      <div className={`px-4 py-4 border-t ${sideBorder}`}>
+      <div className={`px-4 py-4 border-t ${k.sideBorder}`}>
         <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-full ${isDark ? "bg-blue-500/20 text-blue-300" : "bg-blue-100 text-blue-700"} flex items-center justify-center font-semibold`}>
+          <div className={`w-9 h-9 rounded-full ${k.logoBg} flex items-center justify-center font-semibold text-sm`}>
             {(user.name || user.email).slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0">
             <p className="text-sm truncate">{user.name}</p>
-            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>{user.role}</p>
+            <p className={`text-xs ${k.muted}`}>{user.role}</p>
           </div>
         </div>
         <button onClick={() => { logout(); navigate("/os/login", { replace: true }); }}
           data-testid="os-logout"
-          className={`mt-3 w-full inline-flex items-center gap-2 justify-center border ${isDark ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100"} py-2 text-xs uppercase tracking-widest rounded-md transition-colors duration-200`}>
+          className={`mt-3 w-full inline-flex items-center gap-2 justify-center border ${k.ghost} py-2 text-xs uppercase tracking-widest rounded-md transition-colors duration-200`}>
           <LogOut className="w-3.5 h-3.5" /> {t.nav.logout}
         </button>
       </div>
@@ -131,10 +142,9 @@ export default function OSLayout() {
   );
 
   return (
-    <div dir={lang === "ar" ? "rtl" : "ltr"} className={`${shellBg} ${shellText} min-h-screen flex`} data-testid="os-shell">
+    <div dir={lang === "ar" ? "rtl" : "ltr"} className={`${k.shellBg} ${k.shellText} min-h-screen flex`} data-testid="os-shell">
       <aside className="hidden lg:flex">{Sidebar}</aside>
 
-      {/* Mobile sidebar */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -143,7 +153,7 @@ export default function OSLayout() {
       )}
 
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className={`sticky top-0 z-30 border-b ${barBg} backdrop-blur px-4 lg:px-8 py-3 flex items-center justify-between`}>
+        <header className={`sticky top-0 z-30 border-b ${k.barBg} backdrop-blur px-4 lg:px-8 py-3 flex items-center justify-between`}>
           <div className="flex items-center gap-3">
             <button className="lg:hidden" onClick={() => setMobileOpen(true)} data-testid="os-mobile-menu">
               <Menu className="w-5 h-5" />
@@ -152,14 +162,14 @@ export default function OSLayout() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onLangChange} data-testid="os-lang-toggle"
-              className={`inline-flex items-center gap-1.5 border ${isDark ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100"} px-2.5 py-1.5 text-xs rounded-md transition-colors duration-200`}>
+              className={`inline-flex items-center gap-1.5 border ${k.ghost} px-2.5 py-1.5 text-xs rounded-md transition-colors duration-200`}>
               <Globe className="w-3.5 h-3.5" /> {lang === "ar" ? "EN" : "AR"}
             </button>
             <button onClick={onThemeChange} data-testid="os-theme-toggle"
-              className={`inline-flex items-center border ${isDark ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100"} p-1.5 rounded-md transition-colors duration-200`}>
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              className={`inline-flex items-center border ${k.ghost} p-1.5 rounded-md transition-colors duration-200`}>
+              {k.dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button className={`inline-flex items-center border ${isDark ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100"} p-1.5 rounded-md transition-colors duration-200`}
+            <button className={`inline-flex items-center border ${k.ghost} p-1.5 rounded-md transition-colors duration-200`}
               data-testid="os-notif-btn">
               <Bell className="w-4 h-4" />
             </button>

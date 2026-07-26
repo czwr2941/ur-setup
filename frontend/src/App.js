@@ -22,17 +22,7 @@ import Products from "./components/sections/Products";
 import Footer from "./components/sections/Footer";
 import FloatingWidgets from "./components/sections/FloatingWidgets";
 
-// Legacy studio admin (kept intact)
-import AdminLogin from "./admin/AdminLogin";
-import AdminLayout from "./admin/AdminLayout";
-import AdminOverview from "./admin/pages/AdminOverview";
-import AdminReviews from "./admin/pages/AdminReviews";
-import AdminComingSoon from "./admin/pages/AdminComingSoon";
-import AdminPromo from "./admin/pages/AdminPromo";
-import AdminNewsletter from "./admin/pages/AdminNewsletter";
-import AdminUsers from "./admin/pages/AdminUsers";
-
-// UR SETUP OS
+// UR SETUP OS — single internal system
 import OSLogin from "./os/OSLogin";
 import OSLayout from "./os/OSLayout";
 import OSAuthCallback from "./os/OSAuthCallback";
@@ -41,12 +31,16 @@ import OSEmployees from "./os/pages/OSEmployees";
 import OSLogs from "./os/pages/OSLogs";
 import OSSettings from "./os/pages/OSSettings";
 import OSComingSoon from "./os/pages/OSComingSoon";
+import OSMarketing from "./os/pages/OSMarketing";
+import OSSupport from "./os/pages/OSSupport";
+import OSProducts from "./os/pages/OSProducts";
+import OSPending from "./os/pages/OSPending";
 
 const TOASTER_OPTIONS = {
   style: {
-    background: "#0f0f0f",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "#fff",
+    background: "#0F0F11",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "#F5F5F4",
   },
 };
 
@@ -79,7 +73,7 @@ function PublicSite() {
 
 function AppRouter() {
   const location = useLocation();
-  // Handle Emergent Google OAuth callback (hash based) at /os or /
+  // Emergent Google OAuth callback (#session_id=…)
   if (location.hash && location.hash.includes("session_id=") &&
       (location.pathname === "/os" || location.pathname === "/os/" || location.pathname === "/")) {
     return <OSAuthCallback />;
@@ -88,26 +82,16 @@ function AppRouter() {
     <Routes>
       <Route path="/" element={<PublicSite />} />
 
-      {/* Legacy studio admin */}
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<AdminOverview />} />
-        <Route path="reviews" element={<AdminReviews />} />
-        <Route path="coming-soon" element={<AdminComingSoon />} />
-        <Route path="promo" element={<AdminPromo />} />
-        <Route path="newsletter" element={<AdminNewsletter />} />
-        <Route path="users" element={<AdminUsers />} />
-      </Route>
-
-      {/* UR SETUP OS */}
+      {/* UR SETUP OS — single internal system */}
       <Route path="/os/login" element={<OSLogin />} />
+      <Route path="/os/pending" element={<OSPending />} />
       <Route path="/os" element={<OSLayout />}>
         <Route index element={<OSDashboard />} />
         <Route path="orders" element={<OSComingSoon moduleKey="orders" />} />
         <Route path="customers" element={<OSComingSoon moduleKey="customers" />} />
-        <Route path="products" element={<OSComingSoon moduleKey="products" />} />
-        <Route path="marketing" element={<OSComingSoon moduleKey="marketing" />} />
-        <Route path="support" element={<OSComingSoon moduleKey="support" />} />
+        <Route path="products" element={<OSProducts />} />
+        <Route path="marketing" element={<OSMarketing />} />
+        <Route path="support" element={<OSSupport />} />
         <Route path="employees" element={<OSEmployees />} />
         <Route path="analytics" element={<OSComingSoon moduleKey="analytics" />} />
         <Route path="logs" element={<OSLogs />} />

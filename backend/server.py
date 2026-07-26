@@ -29,7 +29,7 @@ JWT_ALG = "HS256"
 ROLES = ("super_admin", "admin", "moderator", "CEO", "Marketing", "Operations", "Tech & Sales", "Support")
 
 # ------ UR SETUP OS role & permission catalog ------
-OS_ROLES_DEFAULT = ["CEO", "Marketing", "Operations", "Tech & Sales", "Support"]
+OS_ROLES_DEFAULT = ["CEO", "Marketing", "Operations", "Tech & Sales", "Support", "Pending"]
 
 PERMISSIONS_CATALOG = {
     "dashboard.view": "View dashboard",
@@ -50,6 +50,7 @@ PERMISSIONS_CATALOG = {
     "settings.view": "View settings",
     "settings.manage": "Manage settings & roles",
     "integrations.manage": "Manage integrations",
+    "tasks.assign": "Assign tasks to other employees",
 }
 
 DEFAULT_ROLE_PERMS = {
@@ -58,7 +59,8 @@ DEFAULT_ROLE_PERMS = {
     "Operations": ["dashboard.view", "orders.view", "orders.manage", "customers.view", "customers.manage", "products.view"],
     "Tech & Sales": ["dashboard.view", "analytics.view", "products.view", "products.manage", "integrations.manage", "settings.view"],
     "Support": ["dashboard.view", "support.view", "support.manage", "customers.view"],
-    # Legacy shims — allow storefront super_admin to still access everything
+    "Pending": [],  # brand new users — zero permissions until CEO approves
+    # Legacy shims for storefront super_admin
     "super_admin": list(PERMISSIONS_CATALOG.keys()),
     "admin": list(PERMISSIONS_CATALOG.keys()),
     "moderator": ["dashboard.view", "support.view"],
@@ -156,8 +158,10 @@ async def get_current_user(request: Request) -> dict:
 
 
 def require_role(*roles: str):
+    # CEO always allowed (top of org).
+    allowed = set(roles) | {"CEO"}
     async def _dep(user: dict = Depends(get_current_user)) -> dict:
-        if user.get("role") not in roles:
+        if user.get("role") not in allowed:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     return _dep
@@ -738,8 +742,12 @@ os_router = APIRouter(prefix="/api/os", tags=["os"])
 
 
 def _perms_for(user: dict):
-    if user.get("permissions"):
-        return list(user["permissions"])
+    # If user has an explicit permissions array, use it (even if empty — means zero perms)
+    if "permissions" in user and user["permissions"] is not None:
+        # If the array is empty AND the role has defaults, fall through to role defaults
+        # ONLY when the user has never been "customized". We detect this via `permissions_customized` flag.
+        if user["permissions"] or user.get("permissions_customized"):
+            return list(user["permissions"])
     return DEFAULT_ROLE_PERMS.get(user.get("role", ""), [])
 
 
@@ -853,13 +861,15 @@ async def os_google_session(request: Request, response: Response):
 
     existing = await db.users.find_one({"email": email})
     if existing is None:
+        # SECURITY: New Google sign-ins get ZERO permissions. CEO must approve.
         new_user = {
             "id": str(uuid.uuid4()),
             "email": email,
             "name": data.get("name") or email.split("@")[0],
             "picture": data.get("picture"),
-            "role": "Support",
+            "role": "Pending",
             "permissions": [],
+            "permissions_customized": True,  # lock at zero until CEO changes it
             "language": "ar",
             "theme": "dark",
             "auth_provider": "google",
@@ -943,6 +953,17 @@ async def os_update_employee(uid: str, payload: OSEmployeeUpdate,
         if len(pwd) < 6:
             raise HTTPException(status_code=400, detail="Password too short")
         updates["password_hash"] = hash_password(pwd)
+    # Track whether the CALLER explicitly requested a permissions change
+    caller_set_perms = "permissions" in updates
+    if caller_set_perms:
+        invalid = [p for p in updates["permissions"] if p not in PERMISSIONS_CATALOG]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid permissions: {invalid}")
+        updates["permissions_customized"] = True
+    # If a role change is requested WITHOUT explicit permissions, reset to role defaults
+    if "role" in updates and not caller_set_perms:
+        updates["permissions"] = []
+        updates["permissions_customized"] = False
     if not updates:
         raise HTTPException(status_code=400, detail="No fields")
     r = await db.users.update_one({"id": uid}, {"$set": updates})
@@ -1034,10 +1055,14 @@ async def os_list_tasks(user: dict = Depends(get_current_user)):
 
 @os_router.post("/tasks", status_code=201)
 async def os_create_task(payload: OSTaskCreate, user: dict = Depends(get_current_user)):
+    # Anyone can create a task for themselves. To assign to another user requires tasks.assign.
+    assigned_to = payload.assigned_to or user["id"]
+    if assigned_to != user["id"] and "tasks.assign" not in _perms_for(user):
+        raise HTTPException(status_code=403, detail="You cannot assign tasks to other employees")
     doc = {
         "id": str(uuid.uuid4()),
         "title": payload.title,
-        "assigned_to": payload.assigned_to or user["id"],
+        "assigned_to": assigned_to,
         "created_by": user["id"],
         "due_at": payload.due_at,
         "done": False,
@@ -1045,9 +1070,16 @@ async def os_create_task(payload: OSTaskCreate, user: dict = Depends(get_current
     }
     await db.tasks.insert_one(dict(doc))
     await log_activity(user, "task_created", "tasks", target=doc["id"],
-                       meta={"title": payload.title})
+                       meta={"title": payload.title, "assigned_to": assigned_to})
     doc.pop("_id", None)
     return doc
+
+
+@os_router.get("/employees/lookup")
+async def os_employees_lookup(user: dict = Depends(get_current_user)):
+    """Minimal employee list for task assignment (name + id only). Any authed user."""
+    cursor = db.users.find({}, {"id": 1, "name": 1, "role": 1, "_id": 0}).sort("name", 1)
+    return [doc async for doc in cursor]
 
 
 @os_router.patch("/tasks/{tid}")
